@@ -56,6 +56,11 @@ hand.
 - **Datatable passthrough** — repeatable `--datatable TABLE:sets`
   selections forwarded to the real run command.
 - **Slack summary** — optional webhook post with build, job and status.
+- **Opt-in AI summary** — `--ai-summary` asks the test agent to
+  summarize failures in two sentences plus one fix, routed into terminal,
+  JSON and Slack output. Off by default so runs stay deterministic and
+  cost free. Needs the AI domain configured (otherwise the summary stays
+  null without failing the run), and AI failures never fail the run.
 - **Zero private imports** — only shells out to public `agentia`
   commands.
 
@@ -126,6 +131,7 @@ Verified live against real CRT (project 76303, job CLI-Target-Job):
 | `--interval-sec <n>` | Seconds between polls, minimum 5 (default 15) |
 | `--timeout-sec <n>` | Max polling seconds, minimum 30 (default 1800) |
 | `--slack-webhook <url>` | Incoming webhook for the summary, optional |
+| `--ai-summary` | Ask the test agent to summarize failures, off by default |
 | `--json` | Machine readable summary |
 
 The summary carries `status`, `job`, `project`, `executionId`,

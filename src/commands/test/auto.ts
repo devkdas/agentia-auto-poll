@@ -1,14 +1,18 @@
 import {Command, Flags} from '@oclif/core'
 import {execFileSync} from 'node:child_process'
-import {existsSync, mkdirSync, writeFileSync} from 'node:fs'
+import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs'
 import {join, resolve} from 'node:path'
 
 const TERMINAL_RE = /^(completed|complete|success|succeeded|successful|passed|pass|failed|failure|error|errored|cancelled|canceled|aborted|timeout|timed.?out)/i
 const RUNNING_RE = /(progress|running|queued|pending|started|executing|in.?progress|waiting)/i
 const STATUS_KEYS = new Set(['status', 'state', 'testresult', 'test_result', 'result', 'buildstatus', 'build_status', 'runstatus', 'run_status'])
+const FAILED_RE = /^(failed|failure|error|errored)/i
+const AI_LOG_LINES = 120
+const AI_LOG_CHARS = 12288
+const AI_TIMEOUT_MS = 120_000
 
-function runAgentia(args: string[]): string {
-  return execFileSync('agentia', args, {encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe']})
+function runAgentia(args: string[], timeoutMs = 60_000): string {
+  return execFileSync('agentia', args, {encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe']})
 }
 
 function crtReady(): {ready: boolean; missing: string[]} {
@@ -74,6 +78,52 @@ function findId(node: unknown, depth = 0): string | null {
   return null
 }
 
+function readLogTail(path: string): string | null {
+  try {
+    const tail = readFileSync(path, 'utf8').split('\n').slice(-AI_LOG_LINES).join('\n')
+    const trimmed = tail.trim()
+    if (trimmed === '') return null
+    return trimmed.length > AI_LOG_CHARS ? trimmed.slice(-AI_LOG_CHARS) : trimmed
+  } catch {
+    return null
+  }
+}
+
+function findAgentText(node: unknown, depth = 0): string | null {
+  if (node == null || depth > 3) return null
+  if (typeof node === 'string') return node.trim() !== '' ? node.trim().slice(0, 2000) : null
+  if (typeof node === 'object' && !Array.isArray(node)) {
+    const obj = node as Record<string, unknown>
+    for (const key of ['response', 'text', 'answer', 'message', 'content', 'output', 'summary']) {
+      const v = obj[key]
+      if (typeof v === 'string' && v.trim() !== '') return v.trim().slice(0, 2000)
+    }
+    if ('result' in obj) return findAgentText(obj['result'], depth + 1)
+  }
+  return null
+}
+
+function summarizeFailure(job: string, executionId: string, status: string, logFile: string | null): string | null {
+  if (!logFile) return null
+  const tail = readLogTail(logFile)
+  if (!tail) return null
+  const prompt =
+    `Summarize this Copado Robotic Testing failure in 2 sentences and suggest one fix. ` +
+    `Job ${job}, build ${executionId}, status ${status}. Log tail:\n${tail}`
+  try {
+    const out = runAgentia(['ai', 'agent', 'ask', '-p', prompt, '--agent', 'test', '--json'], AI_TIMEOUT_MS)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(out)
+    } catch {
+      parsed = out
+    }
+    return findAgentText(parsed)
+  } catch {
+    return null
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms))
 }
@@ -86,6 +136,7 @@ export default class TestAuto extends Command {
     '<%= config.bin %> <%= command.id %> --job 120561 --project 76303',
     '<%= config.bin %> <%= command.id %> --job 120561 --project 76303 --datatable 12:1,2-4',
     '<%= config.bin %> <%= command.id %> --job 120561 --project 76303 --output-dir ./test-results --json',
+    '<%= config.bin %> <%= command.id %> --job 120561 --project 76303 --ai-summary --json',
   ]
 
   static flags = {
@@ -100,6 +151,7 @@ export default class TestAuto extends Command {
     'interval-sec': Flags.integer({description: 'Seconds between status polls.', default: 15}),
     'timeout-sec': Flags.integer({description: 'Max seconds to poll before giving up.', default: 1800}),
     'slack-webhook': Flags.string({description: 'Slack incoming webhook URL for the summary. Optional.'}),
+    'ai-summary': Flags.boolean({description: 'Ask the test agent to summarize failures. Off by default.', default: false}),
     json: Flags.boolean({description: 'Machine readable JSON summary.', default: false}),
   }
 
@@ -112,6 +164,7 @@ export default class TestAuto extends Command {
     const intervalSec = Math.max(5, (flags['interval-sec'] as number) ?? 15)
     const timeoutSec = Math.max(30, (flags['timeout-sec'] as number) ?? 1800)
     const webhook = (flags['slack-webhook'] as string | undefined) ?? null
+    const aiSummaryEnabled = (flags['ai-summary'] as boolean) ?? false
     const asJson = (flags.json as boolean) ?? false
 
     const gate = crtReady()
@@ -207,6 +260,13 @@ export default class TestAuto extends Command {
       resultSaved = false
     }
 
+    let aiSummary: string | null = null
+    if (terminal && FAILED_RE.test(lastStatus) && aiSummaryEnabled) {
+      if (!asJson) this.log('Build failed. Asking the test agent for a summary.')
+      aiSummary = summarizeFailure(job, executionId, lastStatus, logsSaved ? logFile : null)
+      if (!aiSummary && !asJson) this.log('AI summary unavailable. Report files are still saved locally.')
+    }
+
     const summary = {
       status: terminal ? lastStatus : 'timeout',
       job,
@@ -217,16 +277,19 @@ export default class TestAuto extends Command {
       logFile: logsSaved ? logFile : null,
       resultSaved,
       resultFile: resultSaved ? resultFile : null,
+      aiSummaryEnabled,
+      aiSummary,
     }
 
     if (webhook) {
       try {
+        let text =
+          `CRT build ${executionId} (job ${job}) finished with status ${summary.status}. Logs saved: ${logsSaved}.`
+        if (aiSummary) text += `\nAI summary: ${aiSummary}`
         await fetch(webhook, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            text: `CRT build ${executionId} (job ${job}) finished with status ${summary.status}. Logs saved: ${logsSaved}.`,
-          }),
+          body: JSON.stringify({text}),
         })
       } catch {
         if (!asJson) this.log('Slack notification failed. Report files are still saved locally.');
@@ -237,6 +300,7 @@ export default class TestAuto extends Command {
       this.log(JSON.stringify(summary, null, 2))
     } else {
       this.log(`Build ${executionId} finished with status ${summary.status}.`)
+      if (aiSummary) this.log(`AI summary: ${aiSummary}`)
       this.log(`Logs: ${logsSaved ? logFile : 'not saved'}. Result: ${resultSaved ? resultFile : 'not saved'}.`)
     }
 
