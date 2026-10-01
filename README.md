@@ -160,6 +160,22 @@ written when the agent is unreachable.
 | `--crt-project <id>` | CRT project ID used with job IDs |
 | `--json` | Machine readable JSON output |
 
+### `agentia test retry`
+
+| Flag | Description |
+|---|---|
+| `-j, --job <id>` | CRT job or test ID (required) |
+| `-p, --project <id>` | CRT project ID (required) |
+| `-e, --execution <id>` | Build ID to rerun failures from (defaults to latest failed run) |
+| `-o, --output-dir <dir>` | Log plus result directory (default `./test-results`) |
+| `--interval-sec <n>` | Seconds between polls (default 15, minimum 5) |
+| `--timeout-sec <n>` | Max polling seconds (default 1800, minimum 30) |
+| `--json` | Machine readable JSON summary |
+
+Re-runs only failed tests through the rerun failed flags, then polls
+plus persists exactly like a normal run. The summary names the source
+build in `retriedFrom` for traceability.
+
 Downloads the job's robot files, parses real test case names, and
 lexically matches them against story deployment members into covered
 versus gap lists with a percentage. Estimate only, never execution
