@@ -138,6 +138,19 @@ The summary carries `status`, `job`, `project`, `executionId`,
 `terminal`, `logsSaved`, `logFile`, `resultSaved` and `resultFile`.
 Timeouts report `status: timeout` honestly instead of pretending success.
 
+### `agentia test gen`
+
+| Flag | Description |
+|---|---|
+| `-s, --story <id>` | User story driving the skeleton (required) |
+| `-o, --output <path>` | Skeleton file path (defaults into cwd) |
+| `--json` | Machine readable JSON output |
+
+Generates a passing only Robot skeleton from live story context through
+the test agent. Skeleton only: review every line, then import it into
+the CRT job through QEditor before running. Fails honestly with nothing
+written when the agent is unreachable.
+
 ## Configuration
 
 All behavior flows through flags. The webhook stays a flag so it never
