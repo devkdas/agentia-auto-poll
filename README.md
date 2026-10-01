@@ -151,6 +151,20 @@ the test agent. Skeleton only: review every line, then import it into
 the CRT job through QEditor before running. Fails honestly with nothing
 written when the agent is unreachable.
 
+### `agentia test coverage`
+
+| Flag | Description |
+|---|---|
+| `-s, --story <id>` | User story owning the metadata (required) |
+| `-j, --job <id>` | CRT job ID to map case names from, repeatable |
+| `--crt-project <id>` | CRT project ID used with job IDs |
+| `--json` | Machine readable JSON output |
+
+Downloads the job's robot files, parses real test case names, and
+lexically matches them against story deployment members into covered
+versus gap lists with a percentage. Estimate only, never execution
+proof. Downloads land in temp space and are removed after parsing.
+
 ## Configuration
 
 All behavior flows through flags. The webhook stays a flag so it never
