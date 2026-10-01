@@ -176,6 +176,20 @@ Re-runs only failed tests through the rerun failed flags, then polls
 plus persists exactly like a normal run. The summary names the source
 build in `retriedFrom` for traceability.
 
+### `agentia test flaky`
+
+| Flag | Description |
+|---|---|
+| `-j, --job <id>` | CRT job or test ID (required) |
+| `-p, --project <id>` | CRT project ID (required) |
+| `-n, --builds <n>` | Recent builds analyzed (default 20, 2 to 100) |
+| `--json` | Machine readable JSON output |
+
+Scores flip flop rate across terminal states into stable green, stable
+red, flaky, mostly stable or insufficient data verdicts. Aborts plus
+timeouts are excluded, never counted either way. Heuristic, stated
+openly on every output.
+
 Downloads the job's robot files, parses real test case names, and
 lexically matches them against story deployment members into covered
 versus gap lists with a percentage. Estimate only, never execution
