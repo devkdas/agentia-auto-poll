@@ -104,6 +104,12 @@ agentia test auto --job 120561 --project 76303 --datatable 12:1,2-4 --output-dir
 agentia test auto --job 120561 --project 76303 --interval-sec 15 --timeout-sec 600 --slack-webhook https://hooks.slack.com/xxx
 ```
 
+### 4. Generate a skeleton from a story
+
+```sh
+agentia test gen --story US-0000024 --output ./smoke.robot --json
+```
+
 ## Live Demo Workflow
 
 Verified live against real CRT (project 76303, job CLI-Target-Job):
